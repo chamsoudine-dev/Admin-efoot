@@ -547,27 +547,79 @@
     if(!el) return;
     el.innerHTML = '<div class="msg ' + type + '">' + esc(text) + '</div>';
     if(type !== 'error') setTimeout(() => { if(el && el.firstChild) el.innerHTML=''; }, 5000);
+  // ══════════════════════════════════════════════
+  // POSTGRESQL & FIREBASE DUAL-SYNC OPERATIONS
+  // ══════════════════════════════════════════════
+  const API_SYNC_URL = 'https://efoot-one.vercel.app/api/sync';
+
+  async function syncSaveComp(compId, compData){
+    try {
+      await fetch(API_SYNC_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: compId, data: compData })
+      });
+    } catch(e){ console.warn('Sync API POST error:', e); }
+
+    if(rtdb){
+      try { await rtdb.ref('competitions/' + compId).set(compData); } catch(e){}
+    }
   }
 
-  // ══════════════════════════════════════════════
-  // FIREBASE OPERATIONS
-  // ══════════════════════════════════════════════
+  async function syncRemoveComp(compId){
+    try {
+      await fetch(API_SYNC_URL + '?id=' + encodeURIComponent(compId), { method: 'DELETE' });
+    } catch(e){ console.warn('Sync API DELETE error:', e); }
+
+    if(rtdb){
+      try { await rtdb.ref('competitions/' + compId).remove(); } catch(e){}
+    }
+  }
+
+  async function syncSaveAnnouncement(compId, text){
+    try {
+      await fetch(API_SYNC_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: compId, announcement: { text } })
+      });
+    } catch(e){}
+
+    if(rtdb){
+      try {
+        if(text) await rtdb.ref('announcements/' + compId).set({ text, at: Date.now() });
+        else await rtdb.ref('announcements/' + compId).remove();
+      } catch(e){}
+    }
+  }
+
+  async function syncFetchAll(){
+    try {
+      const res = await fetch(API_SYNC_URL);
+      const json = await res.json();
+      if(json && json.ok && json.competitions){
+        return json.competitions;
+      }
+    } catch(e){ console.warn('syncFetchAll error:', e); }
+    return null;
+  }
+
   async function fbGet(path){
     if(!rtdb) return null;
     try { const snap = await rtdb.ref(path).once('value'); return snap.exists() ? snap.val() : null; }
-    catch(e){ console.warn('fbGet error:', e); return null; }
+    catch(e){ return null; }
   }
   async function fbSet(path, val){
     if(!rtdb) return;
-    try { await rtdb.ref(path).set(val); } catch(e){ console.warn('fbSet error:', e); }
+    try { await rtdb.ref(path).set(val); } catch(e){}
   }
   async function fbUpdate(path, val){
     if(!rtdb) return;
-    try { await rtdb.ref(path).update(val); } catch(e){ console.warn('fbUpdate error:', e); }
+    try { await rtdb.ref(path).update(val); } catch(e){}
   }
   async function fbRemove(path){
     if(!rtdb) return;
-    try { await rtdb.ref(path).remove(); } catch(e){ console.warn('fbRemove error:', e); }
+    try { await rtdb.ref(path).remove(); } catch(e){}
   }
 
   // ══════════════════════════════════════════════
@@ -931,10 +983,9 @@
     const updatedStandings = calculateLeagueStandings(comp.registrations || [], comp.leagueMatches);
     comp.standings = updatedStandings;
 
-    // Sauvegarde Firebase & Local
+    // Sauvegarde DB & Local
     try { localStorage.setItem('efoot_allComps', JSON.stringify(allComps)); } catch(e){}
-    await fbSet('competitions/' + currentCompId + '/leagueMatches', comp.leagueMatches);
-    await fbSet('competitions/' + currentCompId + '/standings', updatedStandings);
+    await syncSaveComp(currentCompId, comp);
 
     showMsg('adminMsg','ok','Score enregistré et classement mis à jour en direct !');
     renderAdminComp();
@@ -951,8 +1002,7 @@
     comp.standings = calculateLeagueStandings(regs, matchdays);
 
     try { localStorage.setItem('efoot_allComps', JSON.stringify(allComps)); } catch(e){}
-    await fbSet('competitions/' + currentCompId + '/leagueMatches', matchdays);
-    await fbSet('competitions/' + currentCompId + '/standings', comp.standings);
+    await syncSaveComp(currentCompId, comp);
 
     showMsg('adminMsg','ok','Calendrier des journées de match généré avec succès !');
     renderAdminComp();
@@ -975,7 +1025,7 @@
     comp.bracket = newBracket;
 
     try { localStorage.setItem('efoot_allComps', JSON.stringify(allComps)); } catch(e){}
-    await fbSet('competitions/' + currentCompId + '/bracket', newBracket);
+    await syncSaveComp(currentCompId, comp);
 
     showMsg('adminMsg','ok','Phase finale générée avec les meilleurs du classement !');
     renderAdminComp();
@@ -988,7 +1038,7 @@
     comp.registrations[idx].paid = !comp.registrations[idx].paid;
 
     try { localStorage.setItem('efoot_allComps', JSON.stringify(allComps)); } catch(e){}
-    await fbSet('competitions/' + currentCompId + '/registrations', comp.registrations);
+    await syncSaveComp(currentCompId, comp);
     renderAdminComp();
   };
 
@@ -1000,8 +1050,7 @@
 
     comp.standings = calculateLeagueStandings(comp.registrations, comp.leagueMatches || []);
     try { localStorage.setItem('efoot_allComps', JSON.stringify(allComps)); } catch(e){}
-    await fbSet('competitions/' + currentCompId + '/registrations', comp.registrations);
-    await fbSet('competitions/' + currentCompId + '/standings', comp.standings);
+    await syncSaveComp(currentCompId, comp);
     renderAdminComp();
   };
 
@@ -1025,8 +1074,7 @@
     comp.standings = calculateLeagueStandings(comp.registrations, comp.leagueMatches || []);
 
     try { localStorage.setItem('efoot_allComps', JSON.stringify(allComps)); } catch(e){}
-    await fbSet('competitions/' + currentCompId + '/registrations', comp.registrations);
-    await fbSet('competitions/' + currentCompId + '/standings', comp.standings);
+    await syncSaveComp(currentCompId, comp);
     showMsg('adminMsg','ok','Joueur '+pname+' ajouté avec succès !');
     renderAdminComp();
   });
@@ -1037,7 +1085,6 @@
   function openSetupModal(){
     $('setupModal').style.display = 'flex';
     $('setupMsg').innerHTML = '';
-    // Valeurs par défaut pré-remplies
     $('setName').value = '';
     $('setFormat').value = 'LEAGUE';
     $('setDesc').value = 'Match eFootball 2x6 min, temps réglementaire.';
@@ -1067,7 +1114,6 @@
       return;
     }
 
-    // Extraction robuste avec valeurs de secours
     let fee = parseInt($('setFee').value, 10);
     if(isNaN(fee) || fee < 0) fee = 500;
 
@@ -1105,7 +1151,7 @@
     btn.disabled = true;
     btn.textContent = '⏳ Création en cours...';
 
-    const compId = genId();
+    const compId = 'comp_' + genId();
     const config = {
       name,
       desc: $('setDesc').value.trim() || 'Compétition eFootball',
@@ -1145,12 +1191,10 @@
       bracket
     };
 
-    // 1. Sauvegarde locale immédiate
+    // Sauvegarde Locale + PostgreSQL Render + Firebase
     allComps[compId] = newCompEntry;
     try { localStorage.setItem('efoot_allComps', JSON.stringify(allComps)); } catch(e){}
-
-    // 2. Sauvegarde Firebase Realtime Database
-    await fbSet('competitions/' + compId, newCompEntry);
+    await syncSaveComp(compId, newCompEntry);
 
     btn.disabled = false;
     btn.textContent = '✓ Créer la compétition';
@@ -1262,7 +1306,7 @@
     bracket.rounds[ridx][midx].score2 = s2;
     bracket.rounds[ridx][midx].winner = s1 > s2 ? bracket.rounds[ridx][midx].p1 : bracket.rounds[ridx][midx].p2;
     maybeAdvance(bracket);
-    await fbSet('competitions/' + currentCompId + '/bracket', bracket);
+    await syncSaveComp(currentCompId, comp);
     showMsg('adminMsg','ok','Score enregistré !');
     renderAdminComp();
   });
@@ -1277,7 +1321,7 @@
     const newBracket = { rounds: [round0] };
     maybeAdvance(newBracket);
     comp.bracket = newBracket;
-    await fbSet('competitions/' + currentCompId + '/bracket', newBracket);
+    await syncSaveComp(currentCompId, comp);
     showMsg('adminMsg','ok','Tirage éliminatoire effectué avec succès !');
     renderAdminComp();
   });
@@ -1285,26 +1329,26 @@
   $('resetBracketBtn').addEventListener('click', async function(){
     if(!currentCompId || !confirm('Réinitialiser le tableau éliminatoire ?')) return;
     delete allComps[currentCompId].bracket;
-    await fbRemove('competitions/' + currentCompId + '/bracket');
+    await syncSaveComp(currentCompId, allComps[currentCompId]);
     showMsg('adminMsg','ok','Tableau éliminatoire réinitialisé.');
     renderAdminComp();
   });
 
   $('closeRegsBtn').addEventListener('click', async function(){
     if(!currentCompId) return;
-    const c = allComps[currentCompId].config;
-    c.closed = !c.closed;
-    await fbUpdate('competitions/' + currentCompId + '/config', { closed: c.closed });
-    showMsg('adminMsg','ok', c.closed ? 'Inscriptions closes.' : 'Inscriptions ouvertes.');
+    const comp = allComps[currentCompId];
+    comp.config.closed = !comp.config.closed;
+    await syncSaveComp(currentCompId, comp);
+    showMsg('adminMsg','ok', comp.config.closed ? 'Inscriptions closes.' : 'Inscriptions ouvertes.');
     renderAdminComp();
   });
 
   $('finishCompBtn').addEventListener('click', async function(){
     if(!currentCompId) return;
-    const c = allComps[currentCompId].config;
-    c.finished = !c.finished;
-    await fbUpdate('competitions/' + currentCompId + '/config', { finished: c.finished });
-    showMsg('adminMsg','ok', c.finished ? 'Compétition terminée et archivée.' : 'Compétition rouverte.');
+    const comp = allComps[currentCompId];
+    comp.config.finished = !comp.config.finished;
+    await syncSaveComp(currentCompId, comp);
+    showMsg('adminMsg','ok', comp.config.finished ? 'Compétition terminée et archivée.' : 'Compétition rouverte.');
     renderAdminComp();
   });
 
@@ -1322,27 +1366,25 @@
       payNum: $('editPayNum').value.trim() || '551070395',
       wa: $('editWa').value.trim() || '551070395'
     };
-    await fbUpdate('competitions/' + currentCompId + '/config', upd);
     allComps[currentCompId].config = { ...allComps[currentCompId].config, ...upd };
+    await syncSaveComp(currentCompId, allComps[currentCompId]);
     showMsg('settingsMsg','ok','Réglages enregistrés !');
     renderAdminComp();
   });
 
   $('newTournamentBtn').addEventListener('click', async function(){
     if(!currentCompId || !confirm('Effacer tous les scores et matchs de ce tournoi ?')) return;
-    await fbRemove('competitions/' + currentCompId + '/leagueMatches');
-    await fbRemove('competitions/' + currentCompId + '/standings');
-    await fbRemove('competitions/' + currentCompId + '/bracket');
     delete allComps[currentCompId].leagueMatches;
     delete allComps[currentCompId].standings;
     delete allComps[currentCompId].bracket;
+    await syncSaveComp(currentCompId, allComps[currentCompId]);
     showMsg('adminMsg','ok','Scores et matchs réinitialisés.');
     renderAdminComp();
   });
 
   $('deleteCompBtn').addEventListener('click', async function(){
     if(!currentCompId || !confirm('SUPPRIMER définitivement cette compétition ?')) return;
-    await fbRemove('competitions/' + currentCompId);
+    await syncRemoveComp(currentCompId);
     delete allComps[currentCompId];
     currentCompId = null;
     showMsg('adminMsg','ok','Compétition supprimée.');
@@ -1357,7 +1399,7 @@
     const compId = $('announceCompSelect').value;
     const text = $('announceText').value.trim();
     if(!compId || !text){ showMsg('announceMsg','error','Choisissez une compétition et écrivez un message.'); return; }
-    await fbSet('announcements/' + compId, { text, at: Date.now() });
+    await syncSaveAnnouncement(compId, text);
     showMsg('announceMsg','ok','Annonce publiée en direct !');
     $('announceText').value = '';
   });
@@ -1365,7 +1407,7 @@
   $('clearAnnounce').addEventListener('click', async function(){
     const compId = $('announceCompSelect').value;
     if(!compId) return;
-    await fbRemove('announcements/' + compId);
+    await syncSaveAnnouncement(compId, '');
     showMsg('announceMsg','ok','Annonce effacée.');
   });
 
@@ -1395,9 +1437,13 @@
     a.click();
   });
 
-  $('btnSyncAllDb').addEventListener('click', function(){
-    $('exportBtn').click();
-    showMsg('dbMsg','ok','Données synchronisées avec succès.');
+  $('btnSyncAllDb').addEventListener('click', async function(){
+    const remote = await syncFetchAll();
+    if(remote){
+      allComps = { ...allComps, ...remote };
+      renderAdminAll();
+      showMsg('dbMsg','ok','Données synchronisées avec PostgreSQL sur Render !');
+    }
   });
 
   // ══════════════════════════════════════════════
@@ -1435,41 +1481,31 @@
       if(local) allComps = JSON.parse(local) || {};
     } catch(e){}
 
-    if(rtdb){
-      rtdb.ref('competitions').on('value', snap => {
-        if(snap.exists()){
-          allComps = snap.val() || {};
-          Object.values(allComps).forEach(comp => {
-            if(comp.registrations && !Array.isArray(comp.registrations)){
-              comp.registrations = Object.values(comp.registrations);
-            }
-          });
-          try { localStorage.setItem('efoot_allComps', JSON.stringify(allComps)); } catch(e){}
-        }
+    // Charger les tournois depuis PostgreSQL Render
+    const remoteComps = await syncFetchAll();
+    if(remoteComps && Object.keys(remoteComps).length > 0){
+      allComps = { ...allComps, ...remoteComps };
+      try { localStorage.setItem('efoot_allComps', JSON.stringify(allComps)); } catch(e){}
+    }
+
+    renderAdminAll();
+    if(currentCompId && allComps[currentCompId]) renderAdminComp();
+
+    // Polling régulier de synchronisation
+    setInterval(async () => {
+      const fresh = await syncFetchAll();
+      if(fresh && Object.keys(fresh).length > 0){
+        allComps = { ...allComps, ...fresh };
         renderAdminAll();
         if(currentCompId && allComps[currentCompId]) renderAdminComp();
-      });
-
-      rtdb.ref('announcements').on('value', snap => {
-        const ann = snap.exists() ? snap.val() : {};
-        const entries = Object.entries(ann);
-        if(entries.length === 0){
-          $('announcePreview').innerHTML = '<p class="empty-note">Aucune annonce active.</p>';
-        } else {
-          $('announcePreview').innerHTML = entries.map(([cid, a]) => {
-            const cname = allComps[cid]?.config?.name || cid;
-            return '<div class="announce-banner"><div class="ann-icon">📢</div><div><div class="ann-text"><b>'+esc(cname)+'</b> — '+esc(a.text)+'</div></div></div>';
-          }).join('');
-        }
-      });
-    }
+      }
+    }, 4000);
 
     if(!isAdmin){
       $('adminPanel').style.display = 'none';
       openAdminLogin();
     } else {
       $('adminPanel').style.display = 'block';
-      renderAdminAll();
     }
   }
 
@@ -1478,3 +1514,4 @@
 </script>
 </body>
 </html>
+
