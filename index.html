@@ -547,6 +547,8 @@
     if(!el) return;
     el.innerHTML = '<div class="msg ' + type + '">' + esc(text) + '</div>';
     if(type !== 'error') setTimeout(() => { if(el && el.firstChild) el.innerHTML=''; }, 5000);
+  }
+
   // ══════════════════════════════════════════════
   // POSTGRESQL & FIREBASE DUAL-SYNC OPERATIONS
   // ══════════════════════════════════════════════
