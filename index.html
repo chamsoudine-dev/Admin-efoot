@@ -126,11 +126,11 @@
   
   .matchday-card{background:var(--bg-card);border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:14px}
   .matchday-title{font-family:var(--font-mono);font-size:12px;color:var(--lime);text-transform:uppercase;letter-spacing:1px;margin-bottom:10px;display:flex;justify-content:space-between;align-items:center}
-  .match-row{display:grid;grid-template-columns:1fr 150px 1fr;align-items:center;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:8px 12px;margin-bottom:8px;gap:8px}
+  .match-row{display:grid;grid-template-columns:1fr 180px 1fr;align-items:center;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:8px 12px;margin-bottom:8px;gap:8px}
   .match-player{font-weight:700;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .match-player.right{text-align:right}
-  .match-score-box{display:flex;align-items:center;justify-content:center;gap:6px}
-  .match-score-box input{width:38px;padding:6px 4px;text-align:center;font-weight:800;font-family:var(--font-mono)}
+  .match-score-box{display:flex;align-items:center;justify-content:center;gap:4px}
+  .match-score-box input{width:36px;padding:6px 2px;text-align:center;font-weight:800;font-family:var(--font-mono)}
 
   /* BRACKET */
   .bracket-wrap{overflow-x:auto;padding-bottom:8px;-webkit-overflow-scrolling:touch}
@@ -373,9 +373,14 @@
 
         <!-- MATCHS DE PHASE DE LIGUE & SAISIE DES SCORES -->
         <div class="admin-section" id="leagueMatchesSection">
-          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
-            <h4>🗓️ Matchs de la Phase de Ligue & Scores</h4>
-            <span style="font-size:12px;color:var(--lime);font-family:var(--font-mono)">Saisie instantanée</span>
+          <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:12px">
+            <div>
+              <h4 style="margin-bottom:2px">🗓️ Matchs de la Phase de Ligue & Scores</h4>
+              <span style="font-size:12px;color:var(--lime);font-family:var(--font-mono)">Saisie instantanée & Enregistrement direct</span>
+            </div>
+            <div class="btn-row">
+              <button class="btn btn-sm btn-ghost" id="btnAddManualMatch" type="button">➕ Créer un Match personnalisé</button>
+            </div>
           </div>
           <div id="leagueMatchesArea">
             <p class="empty-note">Cliquez sur "⚡ Générer les Matchs" ci-dessus pour planifier les rencontres.</p>
@@ -918,7 +923,8 @@
                 '<input type="number" min="0" value="'+s1+'" id="lm_s1_'+mdIdx+'_'+mIdx+'" placeholder="0">' +
                 '<span>-</span>' +
                 '<input type="number" min="0" value="'+s2+'" id="lm_s2_'+mdIdx+'_'+mIdx+'" placeholder="0">' +
-                '<button class="mini-btn on" type="button" onclick="saveLeagueScore('+mdIdx+','+mIdx+')">✓</button>' +
+                '<button class="mini-btn on" type="button" title="Valider ce score" onclick="saveLeagueScore('+mdIdx+','+mIdx+')">✓</button>' +
+                '<button class="mini-btn danger" type="button" title="Supprimer ce match" onclick="deleteLeagueMatch('+mdIdx+','+mIdx+')">×</button>' +
               '</div>' +
               '<div class="match-player">'+esc(p2)+'</div>' +
             '</div>';
@@ -970,10 +976,13 @@
     const comp = allComps[currentCompId];
     if(!comp.leagueMatches || !comp.leagueMatches[mdIdx] || !comp.leagueMatches[mdIdx].matches[mIdx]) return;
 
-    const s1Val = $('lm_s1_' + mdIdx + '_' + mIdx).value;
-    const s2Val = $('lm_s2_' + mdIdx + '_' + mIdx).value;
+    const s1Input = $('lm_s1_' + mdIdx + '_' + mIdx);
+    const s2Input = $('lm_s2_' + mdIdx + '_' + mIdx);
+    const s1Val = s1Input ? s1Input.value.trim() : '';
+    const s2Val = s2Input ? s2Input.value.trim() : '';
+
     if(s1Val === '' || s2Val === '' || isNaN(s1Val) || isNaN(s2Val)){
-      showMsg('adminMsg','error','Veuillez entrer les deux scores (ex: 2 - 1).');
+      showMsg('adminMsg','error','Veuillez entrer les deux scores (ex: 2 et 1).');
       return;
     }
 
@@ -981,17 +990,83 @@
     comp.leagueMatches[mdIdx].matches[mIdx].score2 = parseInt(s2Val, 10);
     comp.leagueMatches[mdIdx].matches[mIdx].status = 'FINISHED';
 
-    // Recalcul automatique du classement
+    // Recalcul automatique et immédiat du classement
     const updatedStandings = calculateLeagueStandings(comp.registrations || [], comp.leagueMatches);
     comp.standings = updatedStandings;
 
-    // Sauvegarde DB & Local
+    // Sauvegarde double DB & Local
     try { localStorage.setItem('efoot_allComps', JSON.stringify(allComps)); } catch(e){}
     await syncSaveComp(currentCompId, comp);
 
-    showMsg('adminMsg','ok','Score enregistré et classement mis à jour en direct !');
+    showMsg('adminMsg','ok','✅ Score enregistré ! Le classement a été recalculé et diffusé en direct.');
     renderAdminComp();
   };
+
+  window.deleteLeagueMatch = async function(mdIdx, mIdx){
+    if(!currentCompId || !allComps[currentCompId]) return;
+    if(!confirm('Supprimer cette rencontre ?')) return;
+    const comp = allComps[currentCompId];
+    if(comp.leagueMatches && comp.leagueMatches[mdIdx] && comp.leagueMatches[mdIdx].matches){
+      comp.leagueMatches[mdIdx].matches.splice(mIdx, 1);
+      comp.standings = calculateLeagueStandings(comp.registrations || [], comp.leagueMatches);
+      try { localStorage.setItem('efoot_allComps', JSON.stringify(allComps)); } catch(e){}
+      await syncSaveComp(currentCompId, comp);
+      showMsg('adminMsg','ok','Rencontre supprimée.');
+      renderAdminComp();
+    }
+  };
+
+  // Ajout manuel d'un match sur-mesure
+  $('btnAddManualMatch').addEventListener('click', async function(){
+    if(!currentCompId || !allComps[currentCompId]) return;
+    const comp = allComps[currentCompId];
+    const regs = Array.isArray(comp.registrations) ? comp.registrations : [];
+    if(regs.length < 2){
+      showMsg('adminMsg','error','Il faut au moins 2 joueurs inscrits dans ce tournoi pour créer un match.');
+      return;
+    }
+
+    const pList = regs.map((r, i) => (i+1) + '. ' + (r.gameId || r.name)).join('\n');
+    const p1Choice = prompt('Sélectionnez le Joueur 1 (Numéro ou Pseudo) :\n\n' + pList);
+    if(!p1Choice) return;
+    const p2Choice = prompt('Sélectionnez le Joueur 2 (Numéro ou Pseudo) :\n\n' + pList);
+    if(!p2Choice) return;
+
+    function findParticipant(val){
+      val = val.trim();
+      const num = parseInt(val, 10);
+      if(!isNaN(num) && regs[num-1]) return regs[num-1];
+      return regs.find(r => (r.gameId||'').toLowerCase() === val.toLowerCase() || (r.name||'').toLowerCase() === val.toLowerCase()) || { id: genId(), name: val, gameId: val };
+    }
+
+    const p1 = findParticipant(p1Choice);
+    const p2 = findParticipant(p2Choice);
+
+    if(p1.name === p2.name){
+      showMsg('adminMsg','error','Impossible de faire jouer un joueur contre lui-même.');
+      return;
+    }
+
+    if(!Array.isArray(comp.leagueMatches)) comp.leagueMatches = [];
+    if(comp.leagueMatches.length === 0){
+      comp.leagueMatches.push({ name: 'Journée 1', matches: [] });
+    }
+
+    const targetDay = comp.leagueMatches[comp.leagueMatches.length - 1];
+    targetDay.matches.push({
+      id: genId(),
+      p1: { id: p1.id, name: p1.name, gameId: p1.gameId || p1.name },
+      p2: { id: p2.id, name: p2.name, gameId: p2.gameId || p2.name },
+      score1: null,
+      score2: null,
+      status: 'PENDING'
+    });
+
+    try { localStorage.setItem('efoot_allComps', JSON.stringify(allComps)); } catch(e){}
+    await syncSaveComp(currentCompId, comp);
+    showMsg('adminMsg','ok','Match ' + (p1.gameId||p1.name) + ' vs ' + (p2.gameId||p2.name) + ' ajouté avec succès !');
+    renderAdminComp();
+  });
 
   $('btnGenLeagueMatches').addEventListener('click', async function(){
     if(!currentCompId || !allComps[currentCompId]) return;
