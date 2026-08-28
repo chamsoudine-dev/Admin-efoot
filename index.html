@@ -309,7 +309,12 @@
             <h4>👥 Tous les Joueurs Inscrits (Profils Gamer)</h4>
             <p class="helper">Consultez tous les joueurs enregistrés et ajoutez-les manuellement à n'importe quel tournoi.</p>
           </div>
-          <button class="btn btn-sm btn-ghost" onclick="fetchGamersList()" type="button">🔄 Actualiser</button>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+            <a href="https://efoot-one.vercel.app/api/admin/export/excel" class="btn btn-sm btn-primary" target="_blank" rel="noopener" style="text-decoration:none">
+              📊 Télécharger le Registre Excel (.csv)
+            </a>
+            <button class="btn btn-sm btn-ghost" onclick="fetchGamersList()" type="button">🔄 Actualiser</button>
+          </div>
         </div>
         
         <input type="search" id="searchGamersInput" placeholder="🔍 Rechercher un joueur (nom, téléphone, ID eFootball...)" style="margin-bottom:16px;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:10px 14px;color:var(--text);width:100%">
